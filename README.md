@@ -191,6 +191,74 @@ See `examples/fastapi_callback.py` and `examples/flask_callback.py` for complete
 
 **Important:** Callbacks are retried for ~2 days with exponential backoff. Your handler **must be idempotent** — track `operation_id` and skip duplicates.
 
+### Subscriptions (Recurring Billing)
+
+```python
+from datetime import date
+
+# Create a subscription via checkout
+checkout = client.subscriptions.create(
+    amount=9.99,
+    currency="EUR",
+    frequency=1,
+    period="MONTH",
+    start_date="2025-05-01",
+    url_confirm="https://myshop.com/ok",
+    url_cancel="https://myshop.com/cancel",
+)
+# Redirect user to checkout.url_redirect to authorize
+
+# List all subscriptions
+subs = client.subscriptions.list(limit=10)
+
+# Get a subscription
+sub = client.subscriptions.get("subscription-id")
+
+# Charge a subscription (create a payment against it)
+charge = client.subscriptions.charge("subscription-id", amount=9.99)
+
+# List charges for a subscription
+charges = client.subscriptions.list_charges("subscription-id")
+
+# Get a specific charge
+charge = client.subscriptions.get_charge("subscription-id", "charge-id")
+
+# Cancel a subscription
+sub = client.subscriptions.cancel("subscription-id")
+```
+
+### MB (Multibanco) References
+
+```python
+# Create an MB payment (generates entity + reference for ATM payment)
+op = client.mb.create_payment(amount=25.00, currency="EUR")
+print(op.mb.entity)  # e.g. "21312"
+print(op.mb.ref)     # e.g. "123 456 789"
+
+# Create a recurring MB reference (accepts multiple payments)
+ref = client.mb.create_reference(
+    min_amount=5.00,
+    max_amount=100.00,
+    currency="EUR",
+)
+
+# Delete a recurring MB reference
+client.mb.delete_reference(entity="21312", ref="123456789")
+```
+
+### MB WAY Direct Payments
+
+```python
+# Send push notification to customer's phone (no checkout redirect)
+op = client.mbway.create_payment(
+    amount=5.00,
+    currency="EUR",
+    mbway={"phone": "960000000"},
+)
+# Status will be PENDING until customer approves on their device
+print(op.id, op.status)
+```
+
 ### Request ID / Idempotency
 
 Use `request_id` (UUID) to make requests safely retryable:
@@ -313,17 +381,25 @@ pytest tests/ -v --cov=meowallet --cov-report=term-missing
 | Authorizations | `get` | `GET /api/v2/authorizations/{id}` |
 | Authorizations | `capture` | `POST /api/v2/authorizations/{id}/capture` |
 | Authorizations | `release` | `POST /api/v2/authorizations/{id}/release` |
+| Subscriptions | `create` | `POST /api/v2/checkout` (subscription) |
+| Subscriptions | `list` | `GET /api/v2/subscriptions` |
+| Subscriptions | `get` | `GET /api/v2/subscriptions/{id}` |
+| Subscriptions | `cancel` | `DELETE /api/v2/subscriptions/{id}` |
+| Subscriptions | `charge` | `POST /api/v2/subscriptions/{id}/charge` |
+| Subscriptions | `list_charges` | `GET /api/v2/subscriptions/{id}/charge` |
+| Subscriptions | `get_charge` | `GET /api/v2/subscriptions/{id}/charge/{cid}` |
+| MB | `create_payment` | `POST /api/v2/mb/pay` |
+| MB | `create_reference` | `POST /api/v2/mb/reference` |
+| MB | `delete_reference` | `DELETE /api/v2/mb/reference` |
+| MB WAY | `create_payment` | `POST /api/v2/payment` |
 | Wallets | `list_methods` | `GET /api/v2/wallets/methods` |
 | Requests | `get` | `GET /api/v2/requests/{uuid}` |
 | Callbacks | `verify` | `POST /api/v2/callback/verify` |
 
 ## Not Yet Implemented
 
-The following documented endpoints are excluded from v0.1.0 and may be added in future releases:
+The following documented endpoints may be added in future releases:
 
-- **Subscriptions** — recurring billing via checkout + charge management
-- **MB WAY direct payments** — push-notification payments (`POST /api/v2/payment`)
-- **MB references** — Multibanco reference management (`/api/v2/mb/*`)
 - **SEPA Direct Debit** — mandate + payment management (`/api/v2/sepa/*`)
 - **Marketplace splits** — payment splitting to sub-merchants
 - **Prows2 server-to-server** — card/MBWay payments without checkout (requires ESB token)
